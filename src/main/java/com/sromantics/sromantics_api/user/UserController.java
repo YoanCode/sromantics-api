@@ -1,5 +1,6 @@
 package com.sromantics.sromantics_api.user;
 
+import com.sromantics.sromantics_api.dto.user.AdminResetPasswordRequest;
 import com.sromantics.sromantics_api.dto.user.ChangePasswordRequest;
 import com.sromantics.sromantics_api.dto.user.CreateUserRequest;
 import com.sromantics.sromantics_api.dto.user.UpdateUserRequest;
@@ -63,5 +64,26 @@ public class UserController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable String id) {
         userService.delete(id);
+    }
+
+    /**
+     * 管理員重置用戶密碼 (需要 ADMIN 角色)
+     */
+    @PostMapping("/admin/{id}/password/reset")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void adminResetPassword(
+            @PathVariable String id,
+            @Valid @RequestBody AdminResetPasswordRequest request
+    ) {
+        userService.adminResetPassword(id, request);
+    }
+
+    /**
+     * 管理員解鎖賬戶 (需要 ADMIN 角色)
+     */
+    @PostMapping("/admin/{id}/unlock")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void unlockUser(@PathVariable String id) {
+        userService.unlockUser(id);
     }
 }

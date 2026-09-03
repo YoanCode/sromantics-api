@@ -1,12 +1,15 @@
 package com.sromantics.sromantics_api.user;
 
+import com.sromantics.sromantics_api.dto.user.AdminResetPasswordRequest;
 import com.sromantics.sromantics_api.dto.user.ChangePasswordRequest;
 import com.sromantics.sromantics_api.dto.user.CreateUserRequest;
 import com.sromantics.sromantics_api.dto.user.UpdateUserRequest;
 import com.sromantics.sromantics_api.dto.user.UserResponse;
 import com.sromantics.sromantics_api.entity.User;
 import com.sromantics.sromantics_api.entity.UserRole;
+import com.sromantics.sromantics_api.exception.InvalidPasswordException;
 import com.sromantics.sromantics_api.repository.UserRepository;
+import com.sromantics.sromantics_api.util.PasswordStrengthValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,6 +21,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
 
@@ -36,6 +40,9 @@ class UserServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private PasswordStrengthValidator passwordValidator;
+
     @InjectMocks
     private UserService userService;
 
@@ -43,8 +50,24 @@ class UserServiceTest {
 
     @BeforeEach
     void setUp() {
-        user = new User("u_001", "admin", "admin@example.com", "old-hash",
-                "系統管理員", Set.of(UserRole.ADMIN), true, true, 0, null, null);
+        Instant now = Instant.now();
+        user = new User(
+                "u_001",                              // id
+                "admin",                              // username
+                "admin@example.com",                  // email
+                "old-hash",                           // passwordHash
+                "系統管理員",                             // displayName
+                Set.of(UserRole.ADMIN),              // roles
+                true,                                 // enabled
+                true,                                 // accountNonLocked
+                0,                                    // tokenVersion
+                now,                                  // passwordChangedAt
+                0,                                    // failedLoginAttempts
+                null,                                 // lastFailedLoginAt
+                null,                                 // lastSuccessfulLoginAt
+                now,                                  // createdAt
+                now                                   // updatedAt
+        );
     }
 
     @Test
@@ -81,13 +104,38 @@ class UserServiceTest {
     @Test
     void changePassword_incrementsTokenVersionAndEncodesPassword() {
         when(userRepository.findById("u_001")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("OldPassw0rd!", "old-hash")).thenReturn(true);
         when(passwordEncoder.encode("NewPassw0rd!")).thenReturn("new-hash");
 
-        userService.changePassword("u_001", new ChangePasswordRequest("NewPassw0rd!"));
+        userService.changePassword("u_001", new ChangePasswordRequest("OldPassw0rd!", "NewPassw0rd!"));
 
         assertThat(user.getPasswordHash()).isEqualTo("new-hash");
         assertThat(user.getTokenVersion()).isEqualTo(1);
+        verify(passwordValidator).validate("NewPassw0rd!");
         verify(userRepository).save(user);
+    }
+
+    @Test
+    void changePassword_throwsUnauthorizedForIncorrectCurrentPassword() {
+        when(userRepository.findById("u_001")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("WrongPassword", "old-hash")).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.changePassword("u_001", 
+                new ChangePasswordRequest("WrongPassword", "NewPassw0rd!")))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void changePassword_throwsExceptionForInvalidPassword() {
+        doThrow(new InvalidPasswordException("密碼強度不足"))
+                .when(passwordValidator).validate("weak");
+
+        assertThatThrownBy(() -> userService.changePassword("u_001", 
+                new ChangePasswordRequest("OldPassw0rd!", "weak")))
+                .isInstanceOf(InvalidPasswordException.class);
+        verify(userRepository, never()).save(any());
     }
 
     @Test
@@ -110,5 +158,88 @@ class UserServiceTest {
         assertThatThrownBy(() -> userService.findById("unknown"))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    @Test
+    void adminResetPassword_resetsPasswordWithoutVerifyingCurrent() {
+        when(userRepository.findById("u_001")).thenReturn(Optional.of(user));
+        when(passwordEncoder.encode("AdminPassw0rd!")).thenReturn("admin-hash");
+
+        userService.adminResetPassword("u_001", new AdminResetPasswordRequest("AdminPassw0rd!"));
+
+        assertThat(user.getPasswordHash()).isEqualTo("admin-hash");
+        assertThat(user.getTokenVersion()).isEqualTo(1);
+        verify(passwordValidator).validate("AdminPassw0rd!");
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void adminResetPassword_throwsExceptionForInvalidPassword() {
+        doThrow(new InvalidPasswordException("密碼強度不足"))
+                .when(passwordValidator).validate("weak");
+
+        assertThatThrownBy(() -> userService.adminResetPassword("u_001", 
+                new AdminResetPasswordRequest("weak")))
+                .isInstanceOf(InvalidPasswordException.class);
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void unlockUser_unlocksAccountAndResetsFailedAttempts() {
+        user.recordFailedLoginAttempt();
+        user.recordFailedLoginAttempt();
+        assertThat(user.getFailedLoginAttempts()).isEqualTo(2);
+        assertThat(user.isAccountNonLocked()).isTrue(); // 不足 5 次，未鎖定
+
+        when(userRepository.findById("u_001")).thenReturn(Optional.of(user));
+
+        userService.unlockUser("u_001");
+
+        assertThat(user.getFailedLoginAttempts()).isZero();
+        assertThat(user.isAccountNonLocked()).isTrue();
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void recordFailedLoginAttempt_locksAccountAfterFiveFailures() {
+        Instant now = Instant.now();
+        User testUser = new User(
+                "u_002",                              // id
+                "test",                               // username
+                "test@example.com",                   // email
+                "hash",                               // passwordHash
+                "Test User",                          // displayName
+                Set.of(UserRole.STAFF),              // roles
+                true,                                 // enabled
+                true,                                 // accountNonLocked
+                0,                                    // tokenVersion
+                now,                                  // passwordChangedAt
+                0,                                    // failedLoginAttempts
+                null,                                 // lastFailedLoginAt
+                null,                                 // lastSuccessfulLoginAt
+                now,                                  // createdAt
+                now                                   // updatedAt
+        );
+
+        for (int i = 0; i < 4; i++) {
+            testUser.recordFailedLoginAttempt();
+        }
+        assertThat(testUser.isAccountNonLocked()).isTrue();
+
+        testUser.recordFailedLoginAttempt();
+        assertThat(testUser.isAccountNonLocked()).isFalse();
+        assertThat(testUser.getFailedLoginAttempts()).isEqualTo(5);
+    }
+
+    @Test
+    void recordSuccessfulLogin_resetsFailedAttempts() {
+        user.recordFailedLoginAttempt();
+        user.recordFailedLoginAttempt();
+        assertThat(user.getFailedLoginAttempts()).isEqualTo(2);
+
+        user.recordSuccessfulLogin();
+
+        assertThat(user.getFailedLoginAttempts()).isZero();
+        assertThat(user.getLastSuccessfulLoginAt()).isNotNull();
     }
 }

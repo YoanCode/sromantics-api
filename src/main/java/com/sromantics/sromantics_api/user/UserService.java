@@ -1,11 +1,14 @@
 package com.sromantics.sromantics_api.user;
 
+import com.sromantics.sromantics_api.dto.user.AdminResetPasswordRequest;
 import com.sromantics.sromantics_api.dto.user.ChangePasswordRequest;
 import com.sromantics.sromantics_api.dto.user.CreateUserRequest;
 import com.sromantics.sromantics_api.dto.user.UpdateUserRequest;
 import com.sromantics.sromantics_api.dto.user.UserResponse;
 import com.sromantics.sromantics_api.entity.User;
+import com.sromantics.sromantics_api.exception.InvalidPasswordException;
 import com.sromantics.sromantics_api.repository.UserRepository;
+import com.sromantics.sromantics_api.util.PasswordStrengthValidator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -13,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -26,6 +30,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final PasswordStrengthValidator passwordValidator;
 
     @Transactional(readOnly = true)
     public List<UserResponse> findAll() {
@@ -75,13 +80,43 @@ public class UserService {
     }
 
     public void changePassword(String id, ChangePasswordRequest request) {
+        passwordValidator.validate(request.password());
+
         User user = findEntity(id);
+
+        // 驗證當前密碼
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "當前密碼錯誤");
+        }
+
         user.changePasswordHash(passwordEncoder.encode(request.password()));
+        user.setPasswordChangedAt(Instant.now());
         userRepository.save(user);
     }
 
     public void delete(String id) {
         userRepository.delete(findEntity(id));
+    }
+
+    /**
+     * 管理員重置用戶密碼 (無需驗證當前密碼)
+     */
+    public void adminResetPassword(String id, AdminResetPasswordRequest request) {
+        passwordValidator.validate(request.newPassword());
+
+        User user = findEntity(id);
+        user.changePasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.setPasswordChangedAt(Instant.now());
+        userRepository.save(user);
+    }
+
+    /**
+     * 管理員解鎖賬戶
+     */
+    public void unlockUser(String id) {
+        User user = findEntity(id);
+        user.unlock();
+        userRepository.save(user);
     }
 
     private User findEntity(String id) {

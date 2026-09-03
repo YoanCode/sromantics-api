@@ -19,6 +19,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
@@ -70,6 +71,18 @@ public class User {
     @Column(nullable = false)
     private int tokenVersion = 0;
 
+    @Column(nullable = false)
+    private Instant passwordChangedAt;
+
+    @Column(nullable = false)
+    private int failedLoginAttempts = 0;
+
+    @Column
+    private Instant lastFailedLoginAt;
+
+    @Column
+    private Instant lastSuccessfulLoginAt;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -81,6 +94,7 @@ public class User {
         Instant now = Instant.now();
         createdAt = now;
         updatedAt = now;
+        passwordChangedAt = now;
     }
 
     @PreUpdate
@@ -99,5 +113,43 @@ public class User {
 
     public void changeEmail(String email) {
         this.email = email;
+    }
+
+    /**
+     * 記錄登入失敗嘗試
+     * 5 次失敗後自動鎖定賬戶
+     */
+    public void recordFailedLoginAttempt() {
+        this.failedLoginAttempts++;
+        this.lastFailedLoginAt = Instant.now();
+        if (this.failedLoginAttempts >= 5) {
+            this.accountNonLocked = false;
+        }
+    }
+
+    /**
+     * 記錄成功登入，重置失敗計數
+     */
+    public void recordSuccessfulLogin() {
+        this.failedLoginAttempts = 0;
+        this.lastSuccessfulLoginAt = Instant.now();
+    }
+
+    /**
+     * 檢查是否暫時被鎖定 (30 分鐘自動解鎖)
+     */
+    public boolean isTemporarilyLocked() {
+        if (!accountNonLocked && lastFailedLoginAt != null) {
+            return Instant.now().isBefore(lastFailedLoginAt.plus(Duration.ofMinutes(30)));
+        }
+        return false;
+    }
+
+    /**
+     * 解鎖賬戶，重置失敗計數
+     */
+    public void unlock() {
+        this.accountNonLocked = true;
+        this.failedLoginAttempts = 0;
     }
 }
