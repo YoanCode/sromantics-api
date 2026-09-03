@@ -93,6 +93,10 @@ public class User {
         this.tokenVersion++;
     }
 
+    public void initializePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
     public void changeEmail(String email) {
         this.email = email;
     }
