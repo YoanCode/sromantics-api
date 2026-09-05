@@ -46,6 +46,8 @@
 
 Enrollment create/update requests use a dedicated request contract containing only `studentCourseId`, `classId`, `startedAt`, `endedAt`, and `status`. Legacy database columns are populated server-side from the referenced StudentCourse and are not accepted as client input.
 
+The API rejects an Enrollment when the selected Class does not belong to the StudentCourse course.
+
 Relationship IDs are selected from existing resources in the Web UI. The UI must not require users to manually type `parentId`, `courseId`, `studentId`, `studentCourseId`, `classId`, or `enrollmentId`.
 
 StudentCourse creation requires `enrolledAt`. The API defensively defaults a missing date to the current date and recalculates `remainingLessons` from `purchasedLessons - usedLessons`.
@@ -67,10 +69,18 @@ remainingLessons = purchasedLessons - usedLessons
 ## Attendance rules
 
 - `enrollmentId` 必須指向既有 Enrollment。
+- `attendanceDate` 必須使用 `yyyy-MM-dd` 格式。
+- 出席日期必須落在 Enrollment 的有效區間：`startedAt <= attendanceDate <= endedAt`；未設定 `endedAt` 時視為持續有效。
+- `cancelled` Enrollment 不具備出席資格；`transferred` 與 `completed` Enrollment 仍可在其有效區間內建立歷史出席紀錄。
+- 出席日期必須符合 Enrollment 所屬 Class 的固定上課星期。
 - 同一 Enrollment 同一天不可建立重複 Attendance。
 - `present` 與 `late` 消耗一堂課。
 - `absent` 與 `excused` 不消耗堂數。
 - 更新或刪除 Attendance 時，API 必須以差額方式同步修正 StudentCourse 堂數。
+- 刪除 `present` 或 `late` Attendance 時，`usedLessons` 減少一堂且 `remainingLessons` 增加一堂；刪除 `absent` 或 `excused` 不調整堂數。
+- 若刪除的是歷史孤兒 Attendance，且其 `studentCourseId` 已不存在，API 必須跳過堂數回補但仍完成 Attendance 刪除。
+- 若 StudentCourse 仍被 Enrollment 或 Attendance 參照，不得直接刪除，API 回傳 `409 Conflict`。
+- 若 Enrollment 仍被 Attendance 參照，不得直接刪除，API 回傳 `409 Conflict`。
 
 ## Seed data verification
 

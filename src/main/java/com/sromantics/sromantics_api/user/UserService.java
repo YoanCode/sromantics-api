@@ -6,7 +6,6 @@ import com.sromantics.sromantics_api.dto.user.CreateUserRequest;
 import com.sromantics.sromantics_api.dto.user.UpdateUserRequest;
 import com.sromantics.sromantics_api.dto.user.UserResponse;
 import com.sromantics.sromantics_api.entity.User;
-import com.sromantics.sromantics_api.exception.InvalidPasswordException;
 import com.sromantics.sromantics_api.repository.UserRepository;
 import com.sromantics.sromantics_api.util.PasswordStrengthValidator;
 import lombok.RequiredArgsConstructor;

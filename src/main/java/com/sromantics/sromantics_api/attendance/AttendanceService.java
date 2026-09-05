@@ -3,7 +3,9 @@ package com.sromantics.sromantics_api.attendance;
 import com.sromantics.sromantics_api.entity.Attendance;
 import com.sromantics.sromantics_api.entity.Enrollment;
 import com.sromantics.sromantics_api.entity.StudentCourse;
+import com.sromantics.sromantics_api.entity.Clazz;
 import com.sromantics.sromantics_api.repository.AttendanceRepository;
+import com.sromantics.sromantics_api.repository.ClazzRepository;
 import com.sromantics.sromantics_api.repository.EnrollmentRepository;
 import com.sromantics.sromantics_api.repository.StudentCourseRepository;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.time.DateTimeException;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,6 +28,7 @@ public class AttendanceService {
     private final AttendanceRepository attendanceRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final StudentCourseRepository studentCourseRepository;
+    private final ClazzRepository clazzRepository;
 
     @Transactional(readOnly = true)
     public List<Attendance> findAll() {
@@ -38,6 +43,7 @@ public class AttendanceService {
 
     public Attendance create(Attendance request) {
         Enrollment enrollment = findEnrollment(request.getEnrollmentId());
+        validateAttendanceEligibility(enrollment, request.getAttendanceDate());
         attendanceRepository.findByEnrollmentIdAndAttendanceDate(
                         enrollment.getId(), request.getAttendanceDate())
                 .ifPresent(existing -> {
@@ -60,6 +66,10 @@ public class AttendanceService {
 
     public Attendance update(String id, Attendance request) {
         Attendance attendance = findById(id);
+        String attendanceDate = request.getAttendanceDate() != null
+            ? request.getAttendanceDate()
+            : attendance.getAttendanceDate();
+        validateAttendanceEligibility(findEnrollment(attendance.getEnrollmentId()), attendanceDate);
         if (request.getAttendanceDate() != null
                 && !request.getAttendanceDate().equals(attendance.getAttendanceDate())) {
             attendanceRepository.findByEnrollmentIdAndAttendanceDate(
@@ -82,7 +92,9 @@ public class AttendanceService {
 
     public void delete(String id) {
         Attendance attendance = findById(id);
-        applyLessonDelta(attendance.getStudentCourseId(), attendance.getStatus(), -1);
+        if (studentCourseRepository.existsById(attendance.getStudentCourseId())) {
+            applyLessonDelta(attendance.getStudentCourseId(), attendance.getStatus(), -1);
+        }
         attendanceRepository.delete(attendance);
     }
 
@@ -90,6 +102,36 @@ public class AttendanceService {
         return enrollmentRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Enrollment not found"));
+    }
+
+    private void validateAttendanceEligibility(Enrollment enrollment, String attendanceDate) {
+        if (attendanceDate == null || attendanceDate.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Attendance date is required");
+        }
+
+        LocalDate date;
+        try {
+            date = LocalDate.parse(attendanceDate);
+        } catch (DateTimeException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Attendance date must use yyyy-MM-dd");
+        }
+
+        if (enrollment.getStatus() == Enrollment.Status.cancelled
+                || (enrollment.getStartedAt() != null && attendanceDate.compareTo(enrollment.getStartedAt()) < 0)
+                || (enrollment.getEndedAt() != null && attendanceDate.compareTo(enrollment.getEndedAt()) > 0)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Student was not enrolled in this class on the attendance date");
+        }
+
+        Clazz clazz = clazzRepository.findById(enrollment.getClassId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Class not found for enrollment"));
+        if (date.getDayOfWeek().getValue() != clazz.getDayOfWeek()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Attendance date is not a scheduled class day");
+        }
     }
 
     private void applyLessonDelta(String studentCourseId, Attendance.Status status, int direction) {

@@ -2,6 +2,8 @@ package com.sromantics.sromantics_api.studentcourse;
 
 import com.sromantics.sromantics_api.entity.StudentCourse;
 import com.sromantics.sromantics_api.repository.StudentCourseRepository;
+import com.sromantics.sromantics_api.repository.AttendanceRepository;
+import com.sromantics.sromantics_api.repository.EnrollmentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +19,8 @@ import java.time.LocalDate;
 public class StudentCourseController {
 
     private final StudentCourseRepository repository;
+    private final AttendanceRepository attendanceRepository;
+    private final EnrollmentRepository enrollmentRepository;
 
     @GetMapping
     public List<StudentCourse> list() {
@@ -55,6 +59,11 @@ public class StudentCourseController {
     public void delete(@PathVariable String id) {
         if (!repository.existsById(id)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        if (attendanceRepository.existsByStudentCourseId(id)
+                || enrollmentRepository.existsByStudentCourseId(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Student course is referenced by enrollments or attendance records");
         }
         repository.deleteById(id);
     }

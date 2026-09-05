@@ -2,8 +2,11 @@ package com.sromantics.sromantics_api.enrollment;
 
 import com.sromantics.sromantics_api.entity.Enrollment;
 import com.sromantics.sromantics_api.entity.StudentCourse;
+import com.sromantics.sromantics_api.entity.Clazz;
+import com.sromantics.sromantics_api.repository.ClazzRepository;
 import com.sromantics.sromantics_api.repository.EnrollmentRepository;
 import com.sromantics.sromantics_api.repository.StudentCourseRepository;
+import com.sromantics.sromantics_api.repository.AttendanceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -19,6 +22,8 @@ public class EnrollmentController {
 
     private final EnrollmentRepository repository;
     private final StudentCourseRepository studentCourseRepository;
+    private final ClazzRepository clazzRepository;
+    private final AttendanceRepository attendanceRepository;
 
     @GetMapping
     public List<Enrollment> list() {
@@ -34,11 +39,12 @@ public class EnrollmentController {
     @ResponseStatus(HttpStatus.CREATED)
     public Enrollment create(@RequestBody EnrollmentRequest request) {
         StudentCourse studentCourse = findStudentCourse(request.getStudentCourseId());
+        Clazz clazz = findMatchingClass(request.getClassId(), studentCourse);
         Enrollment enrollment = new Enrollment(UUID.randomUUID().toString(),
                 request.getStartedAt(), toEnrollmentPaymentStatus(studentCourse),
                 studentCourse.getPurchasedLessons(), studentCourse.getUsedLessons(),
                 studentCourse.getRemainingLessons(), studentCourse.getStudentId(),
-                request.getStudentCourseId(), request.getClassId(), request.getStartedAt(),
+                request.getStudentCourseId(), clazz.getId(), request.getStartedAt(),
                 request.getEndedAt(), request.getStatus());
         return repository.save(enrollment);
     }
@@ -48,9 +54,10 @@ public class EnrollmentController {
         Enrollment enrollment = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         StudentCourse studentCourse = findStudentCourse(request.getStudentCourseId());
+        Clazz clazz = findMatchingClass(request.getClassId(), studentCourse);
         enrollment.setStudentCourseId(request.getStudentCourseId());
         enrollment.setStudentId(studentCourse.getStudentId());
-        enrollment.setClassId(request.getClassId());
+        enrollment.setClassId(clazz.getId());
         enrollment.setStartedAt(request.getStartedAt());
         enrollment.setEndedAt(request.getEndedAt());
         enrollment.setStatus(request.getStatus());
@@ -68,6 +75,10 @@ public class EnrollmentController {
         if (!repository.existsById(id)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
+        if (attendanceRepository.existsByEnrollmentId(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Enrollment is referenced by attendance records");
+        }
         repository.deleteById(id);
     }
 
@@ -75,6 +86,17 @@ public class EnrollmentController {
         return studentCourseRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Student course not found"));
+    }
+
+    private Clazz findMatchingClass(String classId, StudentCourse studentCourse) {
+        Clazz clazz = clazzRepository.findById(classId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Class not found"));
+        if (!clazz.getCourseId().equals(studentCourse.getCourseId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Class does not belong to the selected course");
+        }
+        return clazz;
     }
 
     private Enrollment.PaymentStatus toEnrollmentPaymentStatus(StudentCourse studentCourse) {

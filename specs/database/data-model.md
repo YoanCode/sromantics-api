@@ -161,8 +161,12 @@ export interface Attendance {
 
 5. 同一個 `StudentCourse` 可以有多筆 `Enrollment`，支援轉班與跨班使用堂數。
 6. 轉班時，舊 `Enrollment.status` 設為 `transferred`，再建立新的 `active` Enrollment；`StudentCourse` 的堂數不變。
+6a. `StudentCourse` 只代表學生與 Course 的額度、付款與狀態，不直接儲存或顯示單一 Class；班級歸屬與歷史由 Enrollment 管理。
 7. `Attendance` 以 `enrollmentId + attendanceDate` 唯一識別一次點名紀錄。
 8. `present` 或 `late` 會增加 `StudentCourse.usedLessons` 並減少 `remainingLessons`；`absent` 與 `excused` 不扣堂。
+9. `Attendance` 只有在 `attendanceDate` 落於 Enrollment 的 `startedAt` 到 `endedAt`（含邊界，未設定 `endedAt` 視為持續有效），且符合 Class 固定上課星期時才具備建立資格；`cancelled` Enrollment 不可建立出席。
+10. 刪除 `present` 或 `late` Attendance 必須回補一堂 StudentCourse 額度；若 Attendance 指向已不存在的 StudentCourse，視為孤兒資料，刪除時跳過回補但仍移除孤兒紀錄。
+11. StudentCourse 或 Enrollment 被 Attendance／Enrollment 參照時不可直接刪除，避免產生新的孤兒 Attendance；API 應回傳衝突並要求先處理關聯資料。
 
 ---
 
