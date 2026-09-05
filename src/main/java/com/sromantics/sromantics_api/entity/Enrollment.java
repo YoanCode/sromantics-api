@@ -15,21 +15,20 @@ public class Enrollment {
     @Id
     private String id;
 
-    @Column(nullable = false)
-    private String studentId;
+    @Column
+    private String studentCourseId;
 
     @Column(nullable = false)
     private String classId;
 
-    @Column(nullable = false)
-    private String enrolledAt;
+    @Column
+    private String startedAt;
 
-    @Column(nullable = false)
+    private String endedAt;
+
+    @Column
     @Enumerated(EnumType.STRING)
-    private PaymentStatus paymentStatus;
+    private Status status;
 
-    @Column(nullable = false)
-    private int remainingLessons;
-
-    public enum PaymentStatus { paid, unpaid, partial }
+    public enum Status { active, transferred, completed, cancelled }
 }

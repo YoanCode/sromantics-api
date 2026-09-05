@@ -15,12 +15,14 @@ src/main/java/com/sromantics/sromantics_api/
 │   ├── Student.java
 │   ├── Course.java
 │   ├── Clazz.java          ← 避免與 java.lang.Class 衝突
+│   ├── StudentCourse.java
 │   └── Enrollment.java
 ├── repository/
 │   ├── ParentRepository.java
 │   ├── StudentRepository.java
 │   ├── CourseRepository.java
 │   ├── ClazzRepository.java
+│   ├── StudentCourseRepository.java
 │   └── EnrollmentRepository.java
 └── DataInitializer.java
 ```
@@ -170,7 +172,49 @@ public class Clazz {
 }
 ```
 
+### `StudentCourse.java`
+
+> `StudentCourse` 儲存學生購買某門課的堂數。堂數屬於學生與課程的關係，可以跨不同班級使用。
+
+```java
+@Entity
+@Table(name = "student_courses")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class StudentCourse {
+
+    @Id
+    private String id;
+
+    @Column(nullable = false)
+        private String studentId;
+
+    @Column(nullable = false)
+        private String courseId;
+
+    @Column(nullable = false)
+    private String enrolledAt;
+
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+        private PaymentStatus paymentStatus;
+
+        private int purchasedLessons;
+        private int usedLessons;
+        private int remainingLessons;
+
+        @Enumerated(EnumType.STRING)
+        private Status status;
+
+        public enum PaymentStatus { paid, unpaid, partial }
+        public enum Status { active, completed, cancelled }
+}
+```
+
 ### `Enrollment.java`
+
+> `Enrollment` 只記錄學生課程額度目前或歷史加入的班級。轉班時保留舊紀錄並建立新的 `active` 紀錄，堂數仍由 `StudentCourse` 共用。
 
 ```java
 @Entity
@@ -180,26 +224,18 @@ public class Clazz {
 @AllArgsConstructor
 public class Enrollment {
 
-    @Id
-    private String id;
+        @Id
+        private String id;
 
-    @Column(nullable = false)
-    private String studentId;
+        private String studentCourseId;
+        private String classId;
+        private String startedAt;
+        private String endedAt;
 
-    @Column(nullable = false)
-    private String classId;
+        @Enumerated(EnumType.STRING)
+        private Status status;
 
-    @Column(nullable = false)
-    private String enrolledAt;
-
-    @Column(nullable = false)
-    @Enumerated(EnumType.STRING)
-    private PaymentStatus paymentStatus;
-
-    @Column(nullable = false)
-    private int remainingLessons;
-
-    public enum PaymentStatus { paid, unpaid, partial }
+        public enum Status { active, transferred, completed, cancelled }
 }
 ```
 
@@ -219,6 +255,7 @@ public interface ParentRepository extends JpaRepository<Parent, String> {}
 - `StudentRepository extends JpaRepository<Student, String>`
 - `CourseRepository extends JpaRepository<Course, String>`
 - `ClazzRepository extends JpaRepository<Clazz, String>`
+- `StudentCourseRepository extends JpaRepository<StudentCourse, String>`
 - `EnrollmentRepository extends JpaRepository<Enrollment, String>`
 
 ---
@@ -236,11 +273,12 @@ public class DataInitializer implements CommandLineRunner {
     private final StudentRepository studentRepo;
     private final CourseRepository courseRepo;
     private final ClazzRepository clazzRepo;
+        private final StudentCourseRepository studentCourseRepo;
     private final EnrollmentRepository enrollmentRepo;
 
     @Override
     public void run(String... args) {
-        if (parentRepo.count() > 0) return; // 已有資料則跳過
+                if (parentRepo.count() > 0) return;
 
         // --- Parents ---
         parentRepo.save(new Parent("p_001", "王大明", "0912345678",
@@ -266,11 +304,19 @@ public class DataInitializer implements CommandLineRunner {
         clazzRepo.save(new Clazz("cl_002", "c_eng", "2026秋季 小六美語衝刺班",
                 "David Lee", "102語言教室", 4, "17:00", "19:00", 15, 800));
 
-        // --- Enrollments ---
-        enrollmentRepo.save(new Enrollment("e_001", "s_001", "cl_001",
-                "2026-08-01", Enrollment.PaymentStatus.paid, 20));
-        enrollmentRepo.save(new Enrollment("e_002", "s_002", "cl_002",
-                "2026-08-05", Enrollment.PaymentStatus.partial, 10));
+        // --- Student course balances ---
+        studentCourseRepo.save(new StudentCourse("sc_001", "s_001", "c_math",
+                "2026-08-01", StudentCourse.PaymentStatus.paid, 20, 0, 20,
+                StudentCourse.Status.active));
+        studentCourseRepo.save(new StudentCourse("sc_002", "s_002", "c_eng",
+                "2026-08-05", StudentCourse.PaymentStatus.partial, 10, 0, 10,
+                StudentCourse.Status.active));
+
+        // --- Class memberships ---
+        enrollmentRepo.save(new Enrollment("e_001", "sc_001", "cl_001",
+                "2026-08-01", null, Enrollment.Status.active));
+        enrollmentRepo.save(new Enrollment("e_002", "sc_002", "cl_002",
+                "2026-08-05", null, Enrollment.Status.active));
     }
 }
 ```
@@ -286,5 +332,8 @@ parents       → 1 筆
 students      → 2 筆
 courses       → 2 筆
 classes       → 2 筆
+student_courses → 2 筆
 enrollments   → 2 筆
 ```
+
+既有 SQLite 資料庫在 `ddl-auto=update` 下新增轉班欄位時，`Enrollment` 的新欄位允許先為空，以避免舊資料無法啟動；新建立的資料必須填入 `studentCourseId`、`startedAt` 與 `status`。

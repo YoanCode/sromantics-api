@@ -14,11 +14,12 @@ public class DataInitializer implements CommandLineRunner {
     private final StudentRepository studentRepo;
     private final CourseRepository courseRepo;
     private final ClazzRepository clazzRepo;
+        private final StudentCourseRepository studentCourseRepo;
     private final EnrollmentRepository enrollmentRepo;
 
     @Override
     public void run(String... args) {
-        if (parentRepo.count() > 0) return; // 已有資料則跳過
+        if (parentRepo.count() > 0) return;
 
         // --- Parents ---
         parentRepo.save(new Parent("p_001", "王大明", "0912345678",
@@ -44,10 +45,18 @@ public class DataInitializer implements CommandLineRunner {
         clazzRepo.save(new Clazz("cl_002", "c_eng", "2026秋季 小六美語衝刺班",
                 "David Lee", "102語言教室", 4, "17:00", "19:00", 15, 800));
 
-        // --- Enrollments ---
-        enrollmentRepo.save(new Enrollment("e_001", "s_001", "cl_001",
-                "2026-08-01", Enrollment.PaymentStatus.paid, 20));
-        enrollmentRepo.save(new Enrollment("e_002", "s_002", "cl_002",
-                "2026-08-05", Enrollment.PaymentStatus.partial, 10));
+        // --- Student course balances ---
+        studentCourseRepo.save(new StudentCourse("sc_001", "s_001", "c_math",
+                "2026-08-01", StudentCourse.PaymentStatus.paid, 20, 0, 20,
+                StudentCourse.Status.active));
+        studentCourseRepo.save(new StudentCourse("sc_002", "s_002", "c_eng",
+                "2026-08-05", StudentCourse.PaymentStatus.partial, 10, 0, 10,
+                StudentCourse.Status.active));
+
+        // --- Class memberships ---
+        enrollmentRepo.save(new Enrollment("e_001", "sc_001", "cl_001",
+                "2026-08-01", null, Enrollment.Status.active));
+        enrollmentRepo.save(new Enrollment("e_002", "sc_002", "cl_002",
+                "2026-08-05", null, Enrollment.Status.active));
     }
 }
