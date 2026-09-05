@@ -9,6 +9,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.UUID;
+import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/student-courses")
@@ -31,6 +32,12 @@ public class StudentCourseController {
     @ResponseStatus(HttpStatus.CREATED)
     public StudentCourse create(@RequestBody StudentCourse studentCourse) {
         studentCourse.setId(UUID.randomUUID().toString());
+        if (studentCourse.getEnrolledAt() == null || studentCourse.getEnrolledAt().isBlank()) {
+            studentCourse.setEnrolledAt(LocalDate.now().toString());
+        }
+        studentCourse.setUsedLessons(Math.max(0, studentCourse.getUsedLessons()));
+        studentCourse.setRemainingLessons(Math.max(0,
+                studentCourse.getPurchasedLessons() - studentCourse.getUsedLessons()));
         return repository.save(studentCourse);
     }
 

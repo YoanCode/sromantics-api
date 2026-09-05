@@ -16,6 +16,7 @@ public class DataInitializer implements CommandLineRunner {
     private final ClazzRepository clazzRepo;
     private final StudentCourseRepository studentCourseRepo;
     private final EnrollmentRepository enrollmentRepo;
+    private final AttendanceRepository attendanceRepo;
 
     @Override
     public void run(String... args) {
@@ -99,6 +100,18 @@ public class DataInitializer implements CommandLineRunner {
                     enrollmentRepo.save(new Enrollment("e_003", "2026-08-21", Enrollment.PaymentStatus.paid,
                         20, 3, 17, "s_001", "sc_001", "cl_003", "2026-08-21", null,
                     Enrollment.Status.active));
+        }
+
+        seedAttendance("a_001", "e_003", "sc_001", "cl_003", "2026-08-28");
+        seedAttendance("a_002", "e_003", "sc_001", "cl_003", "2026-09-04");
+        seedAttendance("a_003", "e_003", "sc_001", "cl_003", "2026-09-11");
+    }
+
+    private void seedAttendance(String id, String enrollmentId, String studentCourseId,
+            String classId, String attendanceDate) {
+        if (!attendanceRepo.existsById(id)) {
+            attendanceRepo.save(new Attendance(id, enrollmentId, studentCourseId, classId,
+                    attendanceDate, Attendance.Status.present, null, "2026-09-05T09:00:00"));
         }
     }
 }

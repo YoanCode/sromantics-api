@@ -110,6 +110,18 @@ export interface Enrollment {
   status: 'active' | 'transferred' | 'completed' | 'cancelled';
 }
 
+// 7. 出席紀錄 (Attendance) —— 記錄每位學生每堂課的實際出席！
+export interface Attendance {
+  id: string;
+  enrollmentId: string;
+  studentCourseId: string;
+  classId: string;
+  attendanceDate: string;
+  status: 'present' | 'absent' | 'late' | 'excused';
+  note?: string;
+  recordedAt?: string;
+}
+
 ```
 
 ---
@@ -127,6 +139,9 @@ export interface Enrollment {
              │
              ▼
            [ Class 班級 ]
+             │
+             ▼
+       [ Attendance 出席紀錄 ]
       ▲
       │ (多對1)
 [ Course 課程科目 ]
@@ -146,6 +161,8 @@ export interface Enrollment {
 
 5. 同一個 `StudentCourse` 可以有多筆 `Enrollment`，支援轉班與跨班使用堂數。
 6. 轉班時，舊 `Enrollment.status` 設為 `transferred`，再建立新的 `active` Enrollment；`StudentCourse` 的堂數不變。
+7. `Attendance` 以 `enrollmentId + attendanceDate` 唯一識別一次點名紀錄。
+8. `present` 或 `late` 會增加 `StudentCourse.usedLessons` 並減少 `remainingLessons`；`absent` 與 `excused` 不扣堂。
 
 ---
 
