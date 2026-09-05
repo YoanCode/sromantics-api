@@ -303,10 +303,12 @@ public class DataInitializer implements CommandLineRunner {
                 "張天才", "201大教室", 2, "18:30", "21:30", 25, 600));
         clazzRepo.save(new Clazz("cl_002", "c_eng", "2026秋季 小六美語衝刺班",
                 "David Lee", "102語言教室", 4, "17:00", "19:00", 15, 800));
+        clazzRepo.save(new Clazz("cl_003", "c_math", "2026秋季 國二數學特訓B班",
+                "李老師", "202小教室", 4, "18:30", "21:30", 20, 600));
 
         // --- Student course balances ---
         studentCourseRepo.save(new StudentCourse("sc_001", "s_001", "c_math",
-                "2026-08-01", StudentCourse.PaymentStatus.paid, 20, 0, 20,
+                "2026-08-01", StudentCourse.PaymentStatus.paid, 20, 3, 17,
                 StudentCourse.Status.active));
         studentCourseRepo.save(new StudentCourse("sc_002", "s_002", "c_eng",
                 "2026-08-05", StudentCourse.PaymentStatus.partial, 10, 0, 10,
@@ -314,9 +316,11 @@ public class DataInitializer implements CommandLineRunner {
 
         // --- Class memberships ---
         enrollmentRepo.save(new Enrollment("e_001", "sc_001", "cl_001",
-                "2026-08-01", null, Enrollment.Status.active));
+                "2026-08-01", "2026-08-20", Enrollment.Status.transferred));
         enrollmentRepo.save(new Enrollment("e_002", "sc_002", "cl_002",
                 "2026-08-05", null, Enrollment.Status.active));
+        enrollmentRepo.save(new Enrollment("e_003", "sc_001", "cl_003",
+                "2026-08-21", null, Enrollment.Status.active));
     }
 }
 ```
@@ -331,9 +335,9 @@ public class DataInitializer implements CommandLineRunner {
 parents       → 1 筆
 students      → 2 筆
 courses       → 2 筆
-classes       → 2 筆
+classes         → 3 筆
 student_courses → 2 筆
-enrollments   → 2 筆
+enrollments     → 3 筆
 ```
 
-既有 SQLite 資料庫在 `ddl-auto=update` 下新增轉班欄位時，`Enrollment` 的新欄位允許先為空，以避免舊資料無法啟動；新建立的資料必須填入 `studentCourseId`、`startedAt` 與 `status`。
+`DataInitializer` 必須以 idempotent 方式補齊資料，不得只依賴 parent 數量判斷是否跳過。既有 SQLite 資料庫在 `ddl-auto=update` 下仍可能保留舊版 `Enrollment` 的 `student_id`、`enrolled_at`、`payment_status` 與堂數欄位；這些欄位只作為 migration compatibility 使用，由 `StudentCourse` 與新的轉班欄位回填，並不暴露在新的 API contract。新建立的 Enrollment 必須填入 `studentCourseId`、`startedAt` 與 `status`。
