@@ -9,4 +9,5 @@ public interface AttendanceRepository extends JpaRepository<Attendance, String> 
     Optional<Attendance> findByEnrollmentIdAndAttendanceDate(String enrollmentId, String attendanceDate);
     boolean existsByStudentCourseId(String studentCourseId);
     boolean existsByEnrollmentId(String enrollmentId);
+    Optional<Attendance> findByMakeUpCreditId(String makeUpCreditId);
 }

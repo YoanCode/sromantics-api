@@ -118,8 +118,25 @@ export interface Attendance {
   classId: string;
   attendanceDate: string;
   status: 'present' | 'absent' | 'late' | 'excused';
+  makeUpCreditId?: string;
   note?: string;
   recordedAt?: string;
+}
+
+// 8. 缺席產生的一次性補課資格
+export interface MakeUpCredit {
+  id: string;
+  studentId: string;
+  sourceAttendanceId: string;
+  sourceEnrollmentId: string;
+  validUntil: string;
+  status: 'available' | 'scheduled' | 'used' | 'expired' | 'cancelled';
+  targetClassId?: string;
+  targetDate?: string;
+  usedAttendanceId?: string;
+  note?: string;
+  createdAt?: string;
+  usedAt?: string;
 }
 
 ```
@@ -167,6 +184,11 @@ export interface Attendance {
 9. `Attendance` 只有在 `attendanceDate` 落於 Enrollment 的 `startedAt` 到 `endedAt`（含邊界，未設定 `endedAt` 視為持續有效），且符合 Class 固定上課星期時才具備建立資格；`cancelled` Enrollment 不可建立出席。
 10. 刪除 `present` 或 `late` Attendance 必須回補一堂 StudentCourse 額度；若 Attendance 指向已不存在的 StudentCourse，視為孤兒資料，刪除時跳過回補但仍移除孤兒紀錄。
 11. StudentCourse 或 Enrollment 被 Attendance／Enrollment 參照時不可直接刪除，避免產生新的孤兒 Attendance；API 應回傳衝突並要求先處理關聯資料。
+12. `absent` Attendance 建立成功時自動產生一筆 `MakeUpCredit`；每筆缺席最多一筆，預設有效期限為缺席日起 30 天。
+13. `MakeUpCredit` 是學生一次性的補課資格，不屬於 Course 或 StudentCourse 額度；安排補課時可選擇同 Course 的其他 Class。
+14. 補課出席必須帶入 `makeUpCreditId`，並使用來源 Enrollment 驗證學生與 StudentCourse 資格；Attendance 的 `classId` 記錄補課資格安排的目標 Class，日期必須符合目標 Class 的固定上課日；成功出席後狀態改為 `used`，同一資格不可重複使用。
+15. Attendance 狀態由非 `absent` 改為 `absent` 時自動建立補課資格；由 `absent` 改回 `present`、`late` 或 `excused` 時，尚未使用的補課資格改為 `cancelled`，已使用的補課資格不得取消。
+16. 補課資格的來源 Attendance 被刪除時，該補課資格也必須一併移除；系統啟動時應清理已沒有來源 Attendance 的孤兒補課資格。
 
 ---
 

@@ -8,6 +8,7 @@ import com.sromantics.sromantics_api.repository.AttendanceRepository;
 import com.sromantics.sromantics_api.repository.ClazzRepository;
 import com.sromantics.sromantics_api.repository.EnrollmentRepository;
 import com.sromantics.sromantics_api.repository.StudentCourseRepository;
+import com.sromantics.sromantics_api.makeup.MakeUpCreditService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class AttendanceService {
     private final EnrollmentRepository enrollmentRepository;
     private final StudentCourseRepository studentCourseRepository;
     private final ClazzRepository clazzRepository;
+    private final MakeUpCreditService makeUpCreditService;
 
     @Transactional(readOnly = true)
     public List<Attendance> findAll() {
@@ -43,7 +45,15 @@ public class AttendanceService {
 
     public Attendance create(Attendance request) {
         Enrollment enrollment = findEnrollment(request.getEnrollmentId());
-        validateAttendanceEligibility(enrollment, request.getAttendanceDate());
+        boolean makeUpAttendance = request.getMakeUpCreditId() != null
+                && !request.getMakeUpCreditId().isBlank();
+        String attendanceClassId = enrollment.getClassId();
+        if (makeUpAttendance) {
+            attendanceClassId = makeUpCreditService.validateScheduledCredit(
+                    request.getMakeUpCreditId(), enrollment, request.getAttendanceDate());
+        } else {
+            validateAttendanceEligibility(enrollment, request.getAttendanceDate());
+        }
         attendanceRepository.findByEnrollmentIdAndAttendanceDate(
                         enrollment.getId(), request.getAttendanceDate())
                 .ifPresent(existing -> {
@@ -55,17 +65,31 @@ public class AttendanceService {
         attendance.setId(UUID.randomUUID().toString());
         attendance.setEnrollmentId(enrollment.getId());
         attendance.setStudentCourseId(enrollment.getStudentCourseId());
-        attendance.setClassId(enrollment.getClassId());
+        attendance.setClassId(attendanceClassId);
         attendance.setAttendanceDate(request.getAttendanceDate());
         attendance.setStatus(request.getStatus());
         attendance.setNote(request.getNote());
         attendance.setRecordedAt(LocalDateTime.now().toString());
+        String makeUpCreditId = request.getMakeUpCreditId();
+        attendance.setMakeUpCreditId(makeUpCreditId != null && !makeUpCreditId.isBlank()
+                ? makeUpCreditId
+                : null);
         applyLessonDelta(attendance.getStudentCourseId(), attendance.getStatus(), 1);
-        return attendanceRepository.save(attendance);
+        Attendance saved = attendanceRepository.save(attendance);
+        if (saved.getStatus() == Attendance.Status.absent) {
+            makeUpCreditService.createFromAbsence(saved, enrollment);
+        } else if (saved.getMakeUpCreditId() != null && !saved.getMakeUpCreditId().isBlank()) {
+            makeUpCreditService.markUsed(saved.getMakeUpCreditId(), saved.getId());
+        }
+        return saved;
     }
 
     public Attendance update(String id, Attendance request) {
         Attendance attendance = findById(id);
+        Attendance.Status previousStatus = attendance.getStatus();
+        Attendance.Status nextStatus = request.getStatus() != null
+            ? request.getStatus()
+            : previousStatus;
         String attendanceDate = request.getAttendanceDate() != null
             ? request.getAttendanceDate()
             : attendance.getAttendanceDate();
@@ -80,6 +104,14 @@ public class AttendanceService {
                     });
         }
 
+        if (previousStatus == Attendance.Status.absent && nextStatus != Attendance.Status.absent) {
+            makeUpCreditService.cancelForSourceAttendance(attendance.getId());
+        }
+        if (previousStatus != Attendance.Status.absent && nextStatus == Attendance.Status.absent
+                && attendance.getMakeUpCreditId() != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "A make-up attendance cannot be changed to absent");
+        }
         if (request.getStatus() != null && request.getStatus() != attendance.getStatus()) {
             applyLessonDelta(attendance.getStudentCourseId(), attendance.getStatus(), -1);
             applyLessonDelta(attendance.getStudentCourseId(), request.getStatus(), 1);
@@ -87,13 +119,27 @@ public class AttendanceService {
         }
         if (request.getAttendanceDate() != null) attendance.setAttendanceDate(request.getAttendanceDate());
         attendance.setNote(request.getNote());
-        return attendanceRepository.save(attendance);
+        attendance.setMakeUpCreditId(nextStatus == Attendance.Status.absent
+            ? null
+            : request.getMakeUpCreditId() != null
+            && !request.getMakeUpCreditId().isBlank()
+            ? request.getMakeUpCreditId()
+            : null);
+        Attendance saved = attendanceRepository.save(attendance);
+        if (previousStatus != Attendance.Status.absent && nextStatus == Attendance.Status.absent) {
+            makeUpCreditService.createFromAbsence(saved,
+                    findEnrollment(saved.getEnrollmentId()));
+        }
+        return saved;
     }
 
     public void delete(String id) {
         Attendance attendance = findById(id);
         if (studentCourseRepository.existsById(attendance.getStudentCourseId())) {
             applyLessonDelta(attendance.getStudentCourseId(), attendance.getStatus(), -1);
+        }
+        if (attendance.getMakeUpCreditId() != null) {
+            makeUpCreditService.restoreFromAttendance(attendance.getMakeUpCreditId());
         }
         attendanceRepository.delete(attendance);
     }

@@ -17,9 +17,11 @@ public class DataInitializer implements CommandLineRunner {
     private final StudentCourseRepository studentCourseRepo;
     private final EnrollmentRepository enrollmentRepo;
     private final AttendanceRepository attendanceRepo;
+    private final MakeUpCreditRepository makeUpCreditRepo;
 
     @Override
     public void run(String... args) {
+        cleanupOrphanMakeUpCredits();
         if (!parentRepo.existsById("p_001")) {
             parentRepo.save(new Parent("p_001", "王大明", "0912345678",
                     "daming.wang@example.com", Parent.Relationship.father));
@@ -107,11 +109,17 @@ public class DataInitializer implements CommandLineRunner {
         seedAttendance("a_003", "e_003", "sc_001", "cl_003", "2026-09-11");
     }
 
+    private void cleanupOrphanMakeUpCredits() {
+        makeUpCreditRepo.findAll().stream()
+                .filter(credit -> !attendanceRepo.existsById(credit.getSourceAttendanceId()))
+                .forEach(makeUpCreditRepo::delete);
+    }
+
     private void seedAttendance(String id, String enrollmentId, String studentCourseId,
             String classId, String attendanceDate) {
         if (!attendanceRepo.existsById(id)) {
             attendanceRepo.save(new Attendance(id, enrollmentId, studentCourseId, classId,
-                    attendanceDate, Attendance.Status.present, null, "2026-09-05T09:00:00"));
+                    attendanceDate, Attendance.Status.present, null, "2026-09-05T09:00:00", null));
         }
     }
 }

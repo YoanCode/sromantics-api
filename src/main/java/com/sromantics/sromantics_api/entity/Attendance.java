@@ -33,6 +33,7 @@ public class Attendance {
 
     private String note;
     private String recordedAt;
+    private String makeUpCreditId;
 
     public enum Status { present, absent, late, excused }
 }

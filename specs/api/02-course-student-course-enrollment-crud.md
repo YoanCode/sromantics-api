@@ -82,6 +82,23 @@ remainingLessons = purchasedLessons - usedLessons
 - 若 StudentCourse 仍被 Enrollment 或 Attendance 參照，不得直接刪除，API 回傳 `409 Conflict`。
 - 若 Enrollment 仍被 Attendance 參照，不得直接刪除，API 回傳 `409 Conflict`。
 
+## Make-up credit rules
+
+- `POST /api/attendances` 建立 `absent` Attendance 後，API 自動建立一筆 `MakeUpCredit`，來源為該 Attendance。
+- 同一筆缺席只能產生一筆補課資格，預設有效期限為缺席日期後 30 天。
+- `GET /api/make-up-credits` 取得補課資格清單。
+- `PUT /api/make-up-credits/{id}` 只允許安排目標 Class、目標日期與備註，不允許修改來源缺席或學生。
+- 目標 Class 必須屬於來源 StudentCourse 的同一 Course，目標日期必須是該 Class 的固定上課日，且不得早於缺席日或晚於 `validUntil`。
+- 補課 Attendance 必須帶入已安排的 `makeUpCreditId`，並使用相同 StudentCourse；建立成功後補課資格標記為 `used`。
+- 補課 Attendance 的 `enrollmentId` 指向來源 Enrollment，用來驗證學生與 StudentCourse；API 必須將 Attendance 的 `classId` 設為 MakeUpCredit 的目標 Class，不得沿用來源 Enrollment 的原班級。
+- 補課日期不必符合來源 Enrollment 原班級的上課星期，但安排時必須符合目標 Class 的固定上課星期。
+- 一般 Attendance 未使用補課資格時，`makeUpCreditId` 為空字串或未提供都必須視為 `null`，不得嘗試查詢或使用不存在的補課資格。
+- 將既有 Attendance 從非 `absent` 更新為 `absent` 時，API 必須自動建立補課資格。
+- 將來源 Attendance 從 `absent` 更新回 `present`、`late`、或 `excused` 時，尚未使用的補課資格必須標記為 `cancelled`；已使用的補課資格不得被取消，更新必須回傳 `409 Conflict`。
+- 已使用、已過期或已取消的補課資格不可再次安排或使用。
+- `POST /api/make-up-credits/{id}/cancel` 可取消尚未使用的補課資格。
+- API 啟動時必須清理來源 Attendance 已不存在的孤兒 MakeUpCredit，避免回應缺失的課程、班級或日期資料。
+
 ## Seed data verification
 
 API 啟動時必須補齊下列示範資料，即使 SQLite 已經存在舊資料：
